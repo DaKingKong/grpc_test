@@ -1,0 +1,6 @@
+grpcio==1.71.0
+grpcio-tools==1.71.0
+protobuf==5.29.0
+google-cloud-speech==2.26.1
+pyaudio==0.2.14
+requests==2.31.0 
