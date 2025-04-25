@@ -31,18 +31,23 @@ A gRPC server for audio streaming and transcription using Google Cloud Speech AP
 
 ## Local Development
 
-1. Install dependencies:
+1. Install server dependencies:
    ```
-   # Install system dependencies (only required for source builds)
+   pip install -r requirements.txt
+   ```
+
+2. For client development (if using audio recording), install PyAudio:
+   ```
+   # Install system dependencies for PyAudio (client-side only)
    sudo apt-get install portaudio19-dev libasound2-dev  # For Ubuntu/Debian
    # OR
    sudo yum install portaudio-devel alsa-lib-devel      # For CentOS/RHEL
 
-   # Install Python dependencies
-   pip install -r requirements.txt
+   # Install PyAudio
+   pip install pyaudio==0.2.14
    ```
 
-2. Run the server:
+3. Run the server:
    ```
    python server.py
    ```
