@@ -9,9 +9,11 @@ A gRPC server for audio streaming and transcription using Google Cloud Speech AP
    heroku create
    ```
 
-2. Set the buildpack to use the multi-buildpack:
+2. Add buildpacks in the correct order:
    ```
-   heroku buildpacks:set https://github.com/heroku/heroku-buildpack-multi
+   heroku buildpacks:clear
+   heroku buildpacks:add https://github.com/heroku/heroku-buildpack-apt
+   heroku buildpacks:add heroku/python
    ```
 
 3. Set up Google Cloud credentials:
