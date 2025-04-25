@@ -125,8 +125,10 @@ def run():
     
     try:
         # Create gRPC channel
-        with grpc.secure_channel('da-grpc-af57d155345b.herokuapp.com', channel_credentials) as channel:
-        # with grpc.insecure_channel('localhost:10443') as channel:
+        # Connect to Render - use port 443 for secure connection
+        with grpc.secure_channel('https://sip-test.onrender.com', channel_credentials) as channel:
+        # Local development
+        # with grpc.insecure_channel('localhost:10000') as channel:
             # Create stub
             stub = audio_stream_pb2_grpc.StreamingStub(channel)
             

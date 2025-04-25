@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: grpc-audio-service
+    env: python
+    runtime: python3
+    buildCommand: pip install -r requirements.txt
+    startCommand: python server.py
+    plan: free # or choose standard
+    healthCheckPath: /health
+    healthCheckPort: 8081
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.10.13
+      - key: GCP_PROJECT_ID
+        value: audio-streaming-456807
+      - key: GCP_CLIENT_EMAIL
+        value: audiostreaming@audio-streaming-456807.iam.gserviceaccount.com
+      - key: GCP_CLIENT_ID
+        value: 101353014334693255163
+      # The following env vars should be set manually in the Render dashboard
+      # for security reasons:
+      # - GCP_PRIVATE_KEY
+      # - GCP_PRIVATE_KEY_ID
+    domains:
+      - grpc-audio-service.onrender.com 

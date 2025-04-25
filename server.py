@@ -12,6 +12,8 @@ from google.oauth2 import service_account
 import audio_stream_pb2
 import audio_stream_pb2_grpc
 import logging
+from http.server import HTTPServer, BaseHTTPRequestHandler
+from threading import Thread
 
 # Set up logging to stdout
 logging.basicConfig(
@@ -129,6 +131,31 @@ class StreamingService(audio_stream_pb2_grpc.StreamingServicer):
             
         return audio_stream_pb2.google_dot_protobuf_dot_empty__pb2.Empty()
 
+# Health check HTTP server for Render
+def start_health_server(port=8080):
+    """Start a simple HTTP server for health checks"""
+    class HealthHandler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            if self.path == '/health':
+                self.send_response(200)
+                self.send_header('Content-type', 'text/plain')
+                self.end_headers()
+                self.wfile.write(b'OK')
+            else:
+                self.send_response(404)
+                self.end_headers()
+                
+        def log_message(self, format, *args):
+            # Suppress HTTP logs to avoid cluttering console
+            return
+    
+    try:
+        server = HTTPServer(('0.0.0.0', port), HealthHandler)
+        Thread(target=server.serve_forever, daemon=True).start()
+        logger.info(f"Health check server started on port {port}")
+    except Exception as e:
+        logger.error(f"Failed to start health server: {e}")
+
 # Global flag to control server restart
 should_restart = True
 
@@ -146,17 +173,23 @@ def serve():
     audio_stream_pb2_grpc.add_StreamingServicer_to_server(
         StreamingService(credentials=credentials), server
     )
-        
-    # Get the port from the environment variable or default to 8080
-    port = int(os.environ.get("PORT", 8080))
     
-    # For Heroku, we always use 0.0.0.0
+    # Start HTTP health check server on a different port
+    # Render will use this for health checks
+    health_port = int(os.environ.get("HEALTH_PORT", 8081))
+    start_health_server(health_port)
+        
+    # Get the port from the environment variable or default to 10000
+    # Render sets this PORT env var for the main service
+    grpc_port = int(os.environ.get("PORT", 10000))
+    
+    # For Render, we always use 0.0.0.0
     host = '0.0.0.0'
-    server_address = f'{host}:{port}'
+    server_address = f'{host}:{grpc_port}'
     
     server.add_insecure_port(server_address)
     server.start()
-    logger.info(f"Server started at {server_address}")
+    logger.info(f"gRPC server started at {server_address}")
     
     # Setup server health monitoring thread
     def health_monitor():
