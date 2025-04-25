@@ -115,21 +115,18 @@ def run():
     # Register signal handlers
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
+    # For secure connections, you typically don't need root certificates
+    # unless you are using custom or self-signed certificates.
+    # gRPC clients usually trust standard CAs by default.
+    # If you encounter certificate validation issues, you might need to
+    # provide root certificates or disable validation (not recommended for production).
+    # For connecting to ngrok, the default should work.
+    channel_credentials = grpc.ssl_channel_credentials()
     
     try:
-        # Create gRPC channel - NOTE: Do not include 'https://' in the address for gRPC
-        # The address format should be domain:port without the protocol prefix
-        
-        # Options to increase max message size (if needed for audio streaming)
-        options = [
-            ('grpc.max_send_message_length', 8 * 1024 * 1024),  # 8 MB
-            ('grpc.max_receive_message_length', 8 * 1024 * 1024),  # 8 MB
-            ('grpc.enable_http_proxy', 0)  # Disable HTTP proxy to avoid issues
-        ]
-        
-        # Connect to Render service
-        channel_credentials = grpc.ssl_channel_credentials()
-        with grpc.secure_channel('sip-bot.labs.ringcentral.com:10443', channel_credentials, options=options) as channel:
+        # Create gRPC channel
+        with grpc.insecure_channel('sip-bot.labs.ringcentral.com:443') as channel:
+        # with grpc.insecure_channel('localhost:10443') as channel:
             # Create stub
             stub = audio_stream_pb2_grpc.StreamingStub(channel)
             
@@ -143,8 +140,6 @@ def run():
         print("\nClient shutdown initiated")
     except grpc.RpcError as e:
         print(f"\nRPC error occurred: {e.code()} - {e.details()}")
-        if hasattr(e, '_state') and hasattr(e._state, 'details'):
-            print(f"Additional details: {e._state.details}")
     finally:
         print("Client terminated")
 

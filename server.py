@@ -10,7 +10,7 @@ from google.cloud import speech
 import audio_stream_pb2
 import audio_stream_pb2_grpc
 import logging
-class EarlyL
+
 # Set up logging to stdout
 logging.basicConfig(
     level=logging.INFO,
@@ -88,10 +88,12 @@ def serve():
     )
         
     # Get the port from the environment variable or default to 8080
-    port = int(os.environ.get("PORT", 10443))
-) else '[::]'
+    port = int(os.environ.get("PORT", 443))
+    
     # For Cloud Run, use 0.0.0.0 instead of [::]
     host = '0.0.0.0' if os.environ.get("K_SERVICE") else '[::]'
+    server_address = f'{host}:{port}'
+    
     server.add_insecure_port(server_address)
     server.start()
     logger.info(f"Server started at {server_address}")
