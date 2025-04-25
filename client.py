@@ -129,7 +129,7 @@ def run():
         
         # Connect to Render service
         channel_credentials = grpc.ssl_channel_credentials()
-        with grpc.secure_channel('sip-test.onrender.com:443', channel_credentials, options=options) as channel:
+        with grpc.secure_channel('sip-bot.labs.ringcentral.com:10443', channel_credentials, options=options) as channel:
             # Create stub
             stub = audio_stream_pb2_grpc.StreamingStub(channel)
             

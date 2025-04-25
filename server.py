@@ -6,15 +6,11 @@ import time
 import threading
 import traceback
 import os # Import the os module
-import json
 from google.cloud import speech
-from google.oauth2 import service_account
 import audio_stream_pb2
 import audio_stream_pb2_grpc
 import logging
-from http.server import HTTPServer, BaseHTTPRequestHandler
-from threading import Thread
-
+class EarlyL
 # Set up logging to stdout
 logging.basicConfig(
     level=logging.INFO,
@@ -23,69 +19,14 @@ logging.basicConfig(
 )
 logger = logging.getLogger('speech-server')
 
-# Configure Google Cloud credentials
-def setup_google_credentials():
-    """Set up Google Cloud credentials from environment variables"""
-    # Check for credentials in environment variables
-    creds = None
-    
-    # Option 1: Build credentials from individual env vars
-    if os.environ.get('GCP_PROJECT_ID') and os.environ.get('GCP_CLIENT_EMAIL') and os.environ.get('GCP_PRIVATE_KEY'):
-        logger.info("Using Google credentials from individual environment variables")
-        try:
-            creds_dict = {
-                "type": "service_account",
-                "project_id": os.environ.get('GCP_PROJECT_ID'),
-                "private_key_id": os.environ.get('GCP_PRIVATE_KEY_ID', ""),
-                "private_key": os.environ.get('GCP_PRIVATE_KEY').replace('\\n', '\n'),
-                "client_email": os.environ.get('GCP_CLIENT_EMAIL'),
-                "client_id": os.environ.get('GCP_CLIENT_ID', ""),
-                "auth_uri": os.environ.get('GCP_AUTH_URI', "https://accounts.google.com/o/oauth2/auth"),
-                "token_uri": os.environ.get('GCP_TOKEN_URI', "https://oauth2.googleapis.com/token"),
-                "auth_provider_x509_cert_url": os.environ.get('GCP_AUTH_PROVIDER_X509_CERT_URL', "https://www.googleapis.com/oauth2/v1/certs"),
-                "client_x509_cert_url": os.environ.get('GCP_CLIENT_X509_CERT_URL', ""),
-                "universe_domain": os.environ.get('GCP_UNIVERSE_DOMAIN', "googleapis.com")
-            }
-            creds = service_account.Credentials.from_service_account_info(creds_dict)
-        except Exception as e:
-            logger.error(f"Error creating credentials from environment variables: {e}")
-            raise
-    
-    # Option 2: JSON credentials directly in an environment variable
-    elif os.environ.get('GOOGLE_CREDENTIALS_JSON'):
-        logger.info("Using Google credentials from GOOGLE_CREDENTIALS_JSON environment variable")
-        try:
-            creds_json = os.environ.get('GOOGLE_CREDENTIALS_JSON')
-            creds_dict = json.loads(creds_json)
-            creds = service_account.Credentials.from_service_account_info(creds_dict)
-        except Exception as e:
-            logger.error(f"Error parsing GOOGLE_CREDENTIALS_JSON: {e}")
-            raise
-    
-    # Option 3: Path to credentials file (standard approach)
-    elif os.environ.get('GOOGLE_APPLICATION_CREDENTIALS'):
-        logger.info(f"Using Google credentials from file: {os.environ.get('GOOGLE_APPLICATION_CREDENTIALS')}")
-        # The google-cloud libraries will automatically use this environment variable
-    
-    # No credentials found
-    else:
-        logger.warning("No Google credentials found in environment variables. Using default authentication method.")
-    
-    return creds
+print("===== CONTAINER STARTING =====")
 
 class StreamingService(audio_stream_pb2_grpc.StreamingServicer):
-    def __init__(self, credentials=None):
-        self.credentials = credentials
-        
     def Stream(self, request_iterator, context):
         print("Server started, waiting for audio stream...")
         
-        # Configure Google Cloud Speech client with credentials if provided
-        if self.credentials:
-            client = speech.SpeechClient(credentials=self.credentials)
-        else:
-            client = speech.SpeechClient()
-            
+        # Configure Google Cloud Speech client
+        client = speech.SpeechClient()
         config = speech.RecognitionConfig(
             encoding=speech.RecognitionConfig.AudioEncoding.LINEAR16,
             sample_rate_hertz=16000,
@@ -131,39 +72,11 @@ class StreamingService(audio_stream_pb2_grpc.StreamingServicer):
             
         return audio_stream_pb2.google_dot_protobuf_dot_empty__pb2.Empty()
 
-# Health check HTTP server for Render
-def start_health_server(port=8080):
-    """Start a simple HTTP server for health checks"""
-    class HealthHandler(BaseHTTPRequestHandler):
-        def do_GET(self):
-            if self.path == '/health':
-                self.send_response(200)
-                self.send_header('Content-type', 'text/plain')
-                self.end_headers()
-                self.wfile.write(b'OK')
-            else:
-                self.send_response(404)
-                self.end_headers()
-                
-        def log_message(self, format, *args):
-            # Suppress HTTP logs to avoid cluttering console
-            return
-    
-    try:
-        server = HTTPServer(('0.0.0.0', port), HealthHandler)
-        Thread(target=server.serve_forever, daemon=True).start()
-        logger.info(f"Health check server started on port {port}")
-    except Exception as e:
-        logger.error(f"Failed to start health server: {e}")
-
 # Global flag to control server restart
 should_restart = True
 
 def serve():
     global should_restart
-    
-    # Set up Google credentials
-    credentials = setup_google_credentials()
     
     # Health check state
     server_healthy = {'status': True}
@@ -171,25 +84,17 @@ def serve():
     # Create the server instance
     server = grpc.server(concurrent.futures.ThreadPoolExecutor(max_workers=10))
     audio_stream_pb2_grpc.add_StreamingServicer_to_server(
-        StreamingService(credentials=credentials), server
+        StreamingService(), server
     )
-    
-    # Start HTTP health check server on a different port
-    # Render will use this for health checks
-    health_port = int(os.environ.get("HEALTH_PORT", 8081))
-    start_health_server(health_port)
         
-    # Get the port from the environment variable or default to 10000
-    # Render sets this PORT env var for the main service
-    grpc_port = int(os.environ.get("PORT", 10000))
-    
-    # For Render, we always use 0.0.0.0
-    host = '0.0.0.0'
-    server_address = f'{host}:{grpc_port}'
-    
+    # Get the port from the environment variable or default to 8080
+    port = int(os.environ.get("PORT", 10443))
+) else '[::]'
+    # For Cloud Run, use 0.0.0.0 instead of [::]
+    host = '0.0.0.0' if os.environ.get("K_SERVICE") else '[::]'
     server.add_insecure_port(server_address)
     server.start()
-    logger.info(f"gRPC server started at {server_address}")
+    logger.info(f"Server started at {server_address}")
     
     # Setup server health monitoring thread
     def health_monitor():
