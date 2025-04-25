@@ -6,7 +6,9 @@ import time
 import threading
 import traceback
 import os # Import the os module
+import json
 from google.cloud import speech
+from google.oauth2 import service_account
 import audio_stream_pb2
 import audio_stream_pb2_grpc
 import logging
@@ -19,14 +21,69 @@ logging.basicConfig(
 )
 logger = logging.getLogger('speech-server')
 
-print("===== CONTAINER STARTING =====")
+# Configure Google Cloud credentials
+def setup_google_credentials():
+    """Set up Google Cloud credentials from environment variables"""
+    # Check for credentials in environment variables
+    creds = None
+    
+    # Option 1: Build credentials from individual env vars
+    if os.environ.get('GCP_PROJECT_ID') and os.environ.get('GCP_CLIENT_EMAIL') and os.environ.get('GCP_PRIVATE_KEY'):
+        logger.info("Using Google credentials from individual environment variables")
+        try:
+            creds_dict = {
+                "type": "service_account",
+                "project_id": os.environ.get('GCP_PROJECT_ID'),
+                "private_key_id": os.environ.get('GCP_PRIVATE_KEY_ID', ""),
+                "private_key": os.environ.get('GCP_PRIVATE_KEY').replace('\\n', '\n'),
+                "client_email": os.environ.get('GCP_CLIENT_EMAIL'),
+                "client_id": os.environ.get('GCP_CLIENT_ID', ""),
+                "auth_uri": os.environ.get('GCP_AUTH_URI', "https://accounts.google.com/o/oauth2/auth"),
+                "token_uri": os.environ.get('GCP_TOKEN_URI', "https://oauth2.googleapis.com/token"),
+                "auth_provider_x509_cert_url": os.environ.get('GCP_AUTH_PROVIDER_X509_CERT_URL', "https://www.googleapis.com/oauth2/v1/certs"),
+                "client_x509_cert_url": os.environ.get('GCP_CLIENT_X509_CERT_URL', ""),
+                "universe_domain": os.environ.get('GCP_UNIVERSE_DOMAIN', "googleapis.com")
+            }
+            creds = service_account.Credentials.from_service_account_info(creds_dict)
+        except Exception as e:
+            logger.error(f"Error creating credentials from environment variables: {e}")
+            raise
+    
+    # Option 2: JSON credentials directly in an environment variable
+    elif os.environ.get('GOOGLE_CREDENTIALS_JSON'):
+        logger.info("Using Google credentials from GOOGLE_CREDENTIALS_JSON environment variable")
+        try:
+            creds_json = os.environ.get('GOOGLE_CREDENTIALS_JSON')
+            creds_dict = json.loads(creds_json)
+            creds = service_account.Credentials.from_service_account_info(creds_dict)
+        except Exception as e:
+            logger.error(f"Error parsing GOOGLE_CREDENTIALS_JSON: {e}")
+            raise
+    
+    # Option 3: Path to credentials file (standard approach)
+    elif os.environ.get('GOOGLE_APPLICATION_CREDENTIALS'):
+        logger.info(f"Using Google credentials from file: {os.environ.get('GOOGLE_APPLICATION_CREDENTIALS')}")
+        # The google-cloud libraries will automatically use this environment variable
+    
+    # No credentials found
+    else:
+        logger.warning("No Google credentials found in environment variables. Using default authentication method.")
+    
+    return creds
 
 class StreamingService(audio_stream_pb2_grpc.StreamingServicer):
+    def __init__(self, credentials=None):
+        self.credentials = credentials
+        
     def Stream(self, request_iterator, context):
         print("Server started, waiting for audio stream...")
         
-        # Configure Google Cloud Speech client
-        client = speech.SpeechClient()
+        # Configure Google Cloud Speech client with credentials if provided
+        if self.credentials:
+            client = speech.SpeechClient(credentials=self.credentials)
+        else:
+            client = speech.SpeechClient()
+            
         config = speech.RecognitionConfig(
             encoding=speech.RecognitionConfig.AudioEncoding.LINEAR16,
             sample_rate_hertz=16000,
@@ -78,13 +135,16 @@ should_restart = True
 def serve():
     global should_restart
     
+    # Set up Google credentials
+    credentials = setup_google_credentials()
+    
     # Health check state
     server_healthy = {'status': True}
     
     # Create the server instance
     server = grpc.server(concurrent.futures.ThreadPoolExecutor(max_workers=10))
     audio_stream_pb2_grpc.add_StreamingServicer_to_server(
-        StreamingService(), server
+        StreamingService(credentials=credentials), server
     )
         
     # Get the port from the environment variable or default to 8080

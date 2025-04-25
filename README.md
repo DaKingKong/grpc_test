@@ -15,12 +15,30 @@ A gRPC server for audio streaming and transcription using Google Cloud Speech AP
    heroku buildpacks:add heroku/python
    ```
 
-3. Set up Google Cloud credentials:
+3. Set up Google Cloud credentials (choose one option):
+   
+   Option A: Using individual environment variables (recommended for security)
+   ```
+   heroku config:set GCP_PROJECT_ID="audio-streaming-456807"
+   heroku config:set GCP_CLIENT_EMAIL="audiostreaming@audio-streaming-456807.iam.gserviceaccount.com"
+   heroku config:set GCP_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\nYOUR_PRIVATE_KEY_HERE\n-----END PRIVATE KEY-----\n"
+   heroku config:set GCP_CLIENT_ID="101353014334693255163"
+   heroku config:set GCP_PRIVATE_KEY_ID="your-private-key-id"
+   # Optional parameters with defaults:
+   # heroku config:set GCP_CLIENT_X509_CERT_URL="https://www.googleapis.com/robot/v1/metadata/x509/audiostreaming%40audio-streaming-456807.iam.gserviceaccount.com"
+   ```
+   
+   Option B: Using the complete credential JSON directly
+   ```
+   heroku config:set GOOGLE_CREDENTIALS_JSON='{"type":"service_account","project_id":"audio-streaming-456807","private_key_id":"...","private_key":"...","client_email":"audiostreaming@audio-streaming-456807.iam.gserviceaccount.com","client_id":"101353014334693255163","auth_uri":"https://accounts.google.com/o/oauth2/auth","token_uri":"https://oauth2.googleapis.com/token","auth_provider_x509_cert_url":"https://www.googleapis.com/oauth2/v1/certs","client_x509_cert_url":"https://www.googleapis.com/robot/v1/metadata/x509/audiostreaming%40audio-streaming-456807.iam.gserviceaccount.com","universe_domain":"googleapis.com"}'
+   ```
+   
+   Option C: Using a credential file path (traditional approach)
    ```
    heroku config:set GOOGLE_APPLICATION_CREDENTIALS=path/to/your/credentials.json
    ```
 
-4. Upload your Google Cloud credentials file:
+4. For Option C only - Upload your Google Cloud credentials file:
    - Place your Google Cloud credentials JSON file in the project directory
    - Make sure to add the file path to .gitignore to avoid committing sensitive data
 
@@ -47,7 +65,29 @@ A gRPC server for audio streaming and transcription using Google Cloud Speech AP
    pip install pyaudio==0.2.14
    ```
 
-3. Run the server:
+3. Set up Google Cloud credentials locally (choose one option):
+   
+   Option A: Using individual environment variables (recommended for security)
+   ```
+   export GCP_PROJECT_ID="audio-streaming-456807"
+   export GCP_CLIENT_EMAIL="audiostreaming@audio-streaming-456807.iam.gserviceaccount.com"
+   export GCP_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\nYOUR_PRIVATE_KEY_HERE\n-----END PRIVATE KEY-----\n"
+   # Optional parameters
+   export GCP_CLIENT_ID="101353014334693255163"
+   export GCP_PRIVATE_KEY_ID="your-private-key-id"
+   ```
+   
+   Option B: Using the credential JSON directly
+   ```
+   export GOOGLE_CREDENTIALS_JSON='{"type":"service_account","project_id":"audio-streaming-456807","private_key_id":"...","private_key":"...","client_email":"audiostreaming@audio-streaming-456807.iam.gserviceaccount.com","client_id":"101353014334693255163","auth_uri":"https://accounts.google.com/o/oauth2/auth","token_uri":"https://oauth2.googleapis.com/token","auth_provider_x509_cert_url":"https://www.googleapis.com/oauth2/v1/certs","client_x509_cert_url":"https://www.googleapis.com/robot/v1/metadata/x509/audiostreaming%40audio-streaming-456807.iam.gserviceaccount.com","universe_domain":"googleapis.com"}'
+   ```
+   
+   Option C: Using a credential file (traditional approach)
+   ```
+   export GOOGLE_APPLICATION_CREDENTIALS="/path/to/your/service-account-file.json"
+   ```
+
+4. Run the server:
    ```
    python server.py
    ```

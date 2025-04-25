@@ -125,7 +125,7 @@ def run():
     
     try:
         # Create gRPC channel
-        with grpc.secure_channel('9fe8-202-163-1-218.ngrok-free.app', channel_credentials) as channel:
+        with grpc.secure_channel('da-grpc-af57d155345b.herokuapp.com', channel_credentials) as channel:
         # with grpc.insecure_channel('localhost:10443') as channel:
             # Create stub
             stub = audio_stream_pb2_grpc.StreamingStub(channel)
