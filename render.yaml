@@ -23,4 +23,18 @@ services:
       # - GCP_PRIVATE_KEY
       # - GCP_PRIVATE_KEY_ID
     domains:
-      - grpc-audio-service.onrender.com 
+      - grpc-audio-service.onrender.com
+    # Add HTTP/2 and gRPC support
+    headers:
+      - path: /*
+        name: X-Content-Type-Options
+        value: nosniff
+      - path: /*
+        name: X-Frame-Options
+        value: DENY
+      - path: /*
+        name: X-XSS-Protection
+        value: 1; mode=block
+    routes:
+      - type: http2
+        protocol: grpc 

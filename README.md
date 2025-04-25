@@ -2,50 +2,63 @@
 
 A gRPC server for audio streaming and transcription using Google Cloud Speech API.
 
-## Deployment to Heroku
+## Deployment to Render
 
-1. Create a Heroku app:
-   ```
-   heroku create
-   ```
+### Option 1: Deploy from Dashboard
 
-2. Add buildpacks:
-   ```
-   heroku buildpacks:clear
-   heroku buildpacks:add heroku/python
-   ```
+1. Create an account on [Render](https://render.com) if you don't have one
 
-3. Set up Google Cloud credentials (choose one option):
-   
-   Option A: Using individual environment variables (recommended for security)
+2. In the Render dashboard, click "New" and select "Web Service"
+
+3. Connect your GitHub repository
+
+4. Configure the service:
+   - **Name**: grpc-audio-service (or your preferred name)
+   - **Environment**: Python
+   - **Build Command**: `pip install -r requirements.txt`
+   - **Start Command**: `python server.py`
+   - **Plan**: Free (or select a paid plan for production use)
+   - **Advanced** → **Health Check Path**: `/health`
+   - **Advanced** → **Health Check Port**: `8081`
+
+5. Set up environment variables for Google Cloud credentials:
    ```
-   heroku config:set GCP_PROJECT_ID="audio-streaming-456807"
-   heroku config:set GCP_CLIENT_EMAIL="audiostreaming@audio-streaming-456807.iam.gserviceaccount.com"
-   heroku config:set GCP_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\nYOUR_PRIVATE_KEY_HERE\n-----END PRIVATE KEY-----\n"
-   heroku config:set GCP_CLIENT_ID="101353014334693255163"
-   heroku config:set GCP_PRIVATE_KEY_ID="your-private-key-id"
-   # Optional parameters with defaults:
-   # heroku config:set GCP_CLIENT_X509_CERT_URL="https://www.googleapis.com/robot/v1/metadata/x509/audiostreaming%40audio-streaming-456807.iam.gserviceaccount.com"
-   ```
-   
-   Option B: Using the complete credential JSON directly
-   ```
-   heroku config:set GOOGLE_CREDENTIALS_JSON='{"type":"service_account","project_id":"audio-streaming-456807","private_key_id":"...","private_key":"...","client_email":"audiostreaming@audio-streaming-456807.iam.gserviceaccount.com","client_id":"101353014334693255163","auth_uri":"https://accounts.google.com/o/oauth2/auth","token_uri":"https://oauth2.googleapis.com/token","auth_provider_x509_cert_url":"https://www.googleapis.com/oauth2/v1/certs","client_x509_cert_url":"https://www.googleapis.com/robot/v1/metadata/x509/audiostreaming%40audio-streaming-456807.iam.gserviceaccount.com","universe_domain":"googleapis.com"}'
-   ```
-   
-   Option C: Using a credential file path (traditional approach)
-   ```
-   heroku config:set GOOGLE_APPLICATION_CREDENTIALS=path/to/your/credentials.json
+   GCP_PROJECT_ID=audio-streaming-456807
+   GCP_CLIENT_EMAIL=audiostreaming@audio-streaming-456807.iam.gserviceaccount.com
+   GCP_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\nYOUR_PRIVATE_KEY_HERE\n-----END PRIVATE KEY-----\n"
+   GCP_CLIENT_ID=101353014334693255163
+   GCP_PRIVATE_KEY_ID=your-private-key-id
    ```
 
-4. For Option C only - Upload your Google Cloud credentials file:
-   - Place your Google Cloud credentials JSON file in the project directory
-   - Make sure to add the file path to .gitignore to avoid committing sensitive data
+6. Click "Create Web Service"
 
-5. Deploy to Heroku:
-   ```
-   git push heroku main
-   ```
+### Option 2: Deploy via render.yaml (Blueprint)
+
+1. Push the included `render.yaml` file to your GitHub repository
+
+2. In the Render dashboard, click "New" and select "Blueprint"
+
+3. Connect your GitHub repository
+
+4. Configure the environment variables for Google Cloud credentials that are marked as manual in the render.yaml file:
+   - `GCP_PRIVATE_KEY`
+   - `GCP_PRIVATE_KEY_ID`
+
+5. Click "Apply Blueprint"
+
+## Connecting to the Deployed Service
+
+When your service is deployed on Render, clients should connect to:
+```
+grpc-audio-service.onrender.com:443
+```
+
+The client needs to use a secure channel with SSL credentials:
+```python
+channel_credentials = grpc.ssl_channel_credentials()
+with grpc.secure_channel('grpc-audio-service.onrender.com:443', channel_credentials) as channel:
+    # Use the channel for gRPC requests
+```
 
 ## Local Development
 
