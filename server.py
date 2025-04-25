@@ -88,10 +88,10 @@ def serve():
     )
         
     # Get the port from the environment variable or default to 8080
-    port = int(os.environ.get("PORT", 10443))
+    port = int(os.environ.get("PORT", 8080))
     
-    # For Cloud Run, use 0.0.0.0 instead of [::]
-    host = '0.0.0.0' if os.environ.get("K_SERVICE") else '[::]'
+    # For Heroku, we always use 0.0.0.0
+    host = '0.0.0.0'
     server_address = f'{host}:{port}'
     
     server.add_insecure_port(server_address)

@@ -1,6 +1,51 @@
-# gRPC Audio Transcription System
+# gRPC Audio Stream Server
 
-This project implements a simple gRPC-based system where a client captures audio from a microphone and sends it to a server for real-time transcription using Google Cloud Speech-to-Text API.
+A gRPC server for audio streaming and transcription using Google Cloud Speech API.
+
+## Deployment to Heroku
+
+1. Create a Heroku app:
+   ```
+   heroku create
+   ```
+
+2. Add buildpacks:
+   ```
+   heroku buildpacks:add heroku/python
+   heroku buildpacks:add https://github.com/heroku/heroku-buildpack-apt
+   ```
+
+3. Set up Google Cloud credentials:
+   ```
+   heroku config:set GOOGLE_APPLICATION_CREDENTIALS=path/to/your/credentials.json
+   ```
+
+4. Upload your Google Cloud credentials file:
+   - Place your Google Cloud credentials JSON file in the project directory
+   - Make sure to add the file path to .gitignore to avoid committing sensitive data
+
+5. Deploy to Heroku:
+   ```
+   git push heroku main
+   ```
+
+## Local Development
+
+1. Install dependencies:
+   ```
+   # Install system dependencies
+   sudo apt-get install portaudio19-dev  # For Ubuntu/Debian
+   # OR
+   sudo yum install portaudio-devel      # For CentOS/RHEL
+
+   # Install Python dependencies
+   pip install -r requirements.txt
+   ```
+
+2. Run the server:
+   ```
+   python server.py
+   ```
 
 ## Features
 

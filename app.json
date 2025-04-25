@@ -1,0 +1,20 @@
+{
+  "name": "gRPC Audio Stream Server",
+  "description": "A gRPC server for audio streaming and transcription using Google Cloud Speech API",
+  "repository": "",
+  "keywords": ["python", "grpc", "speech-to-text"],
+  "buildpacks": [
+    {
+      "url": "heroku/python"
+    },
+    {
+      "url": "https://github.com/heroku/heroku-buildpack-apt"
+    }
+  ],
+  "env": {
+    "GOOGLE_APPLICATION_CREDENTIALS": {
+      "description": "Path to Google Cloud credentials file",
+      "required": true
+    }
+  }
+} 
