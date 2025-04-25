@@ -5,9 +5,6 @@
   "keywords": ["python", "grpc", "speech-to-text"],
   "buildpacks": [
     {
-      "url": "https://github.com/heroku/heroku-buildpack-apt"
-    },
-    {
       "url": "heroku/python"
     }
   ],

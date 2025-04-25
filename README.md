@@ -9,10 +9,9 @@ A gRPC server for audio streaming and transcription using Google Cloud Speech AP
    heroku create
    ```
 
-2. Add buildpacks in the correct order:
+2. Add buildpacks:
    ```
    heroku buildpacks:clear
-   heroku buildpacks:add https://github.com/heroku/heroku-buildpack-apt
    heroku buildpacks:add heroku/python
    ```
 
@@ -34,7 +33,7 @@ A gRPC server for audio streaming and transcription using Google Cloud Speech AP
 
 1. Install dependencies:
    ```
-   # Install system dependencies
+   # Install system dependencies (only required for source builds)
    sudo apt-get install portaudio19-dev libasound2-dev  # For Ubuntu/Debian
    # OR
    sudo yum install portaudio-devel alsa-lib-devel      # For CentOS/RHEL
