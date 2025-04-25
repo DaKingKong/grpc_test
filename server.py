@@ -88,7 +88,7 @@ def serve():
     )
         
     # Get the port from the environment variable or default to 8080
-    port = int(os.environ.get("PORT", 443))
+    port = int(os.environ.get("PORT", 10443))
     
     # For Cloud Run, use 0.0.0.0 instead of [::]
     host = '0.0.0.0' if os.environ.get("K_SERVICE") else '[::]'
