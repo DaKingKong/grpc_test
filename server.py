@@ -92,9 +92,26 @@ def serve():
     host = '0.0.0.0' if os.environ.get("K_SERVICE") else '[::]'
     server_address = f'{host}:{port}'
     
-    server.add_insecure_port(server_address)
+    # Check if SSL certificates are available
+    cert_file = os.environ.get('SSL_CERT_FILE')
+    key_file = os.environ.get('SSL_KEY_FILE')
+    
+    if cert_file and key_file and os.path.exists(cert_file) and os.path.exists(key_file):
+        # Use secure connection with SSL certificates
+        with open(cert_file, 'rb') as f:
+            cert_data = f.read()
+        with open(key_file, 'rb') as f:
+            key_data = f.read()
+            
+        server_credentials = grpc.ssl_server_credentials([(key_data, cert_data)])
+        server.add_secure_port(server_address, server_credentials)
+        logger.info(f"Server started with SSL at {server_address}")
+    else:
+        # Fall back to insecure connection
+        server.add_insecure_port(server_address)
+        logger.info(f"Server started without SSL at {server_address} (insecure)")
+    
     server.start()
-    logger.info(f"Server started at {server_address}")
     
     # Setup server health monitoring thread
     def health_monitor():

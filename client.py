@@ -125,7 +125,7 @@ def run():
     
     try:
         # Create gRPC channel
-        with grpc.insecure_channel('sip-bot.labs.ringcentral.com:443') as channel:
+        with grpc.secure_channel('sip-bot.labs.ringcentral.com:443', channel_credentials) as channel:
         # with grpc.insecure_channel('localhost:443') as channel:
             # Create stub
             stub = audio_stream_pb2_grpc.StreamingStub(channel)
