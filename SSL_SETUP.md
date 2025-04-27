@@ -9,8 +9,14 @@ If you have a domain name pointing to your EC2 instance, you can use Let's Encry
 1. SSH into your EC2 instance
 2. Install certbot:
    ```bash
-   sudo apt-get update
-   sudo apt-get install certbot
+   # For Amazon Linux 2
+   sudo yum update -y
+   sudo yum install -y python3 python3-pip
+   sudo pip3 install certbot
+   
+   # For Amazon Linux 2023
+   sudo dnf update -y
+   sudo dnf install -y certbot
    ```
 3. Obtain SSL certificates (replace `yourdomain.com` with your actual domain):
    ```bash
@@ -32,7 +38,7 @@ For testing purposes, you can generate self-signed certificates:
 
 1. Install OpenSSL:
    ```bash
-   sudo apt-get install openssl
+   sudo yum install -y openssl
    ```
 
 2. Generate a private key:

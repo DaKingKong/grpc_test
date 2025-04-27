@@ -40,6 +40,12 @@ class StreamingService(audio_stream_pb2_grpc.StreamingServicer):
         # expected by Google Cloud Speech API
         def audio_generator():
             for stream_event in request_iterator:
+                session_id = stream_event.session_id
+                segment_id = stream_event.segment_media.segment_id
+                payload = stream_event.segment_media.audio_content.payload
+                seq = stream_event.segment_media.audio_content.seq
+                duration = stream_event.segment_media.audio_content.duration
+                logger.info(f"{session_id}: SegmentMedia, segment_id: {segment_id}, payload size: {len(payload)}, seq: {seq}, duration: {duration}")
                 if stream_event.HasField('segment_media'):
                     yield speech.StreamingRecognizeRequest(
                         audio_content=stream_event.segment_media.audio_content.payload
