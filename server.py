@@ -19,8 +19,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger('speech-server')
 
-print("===== CONTAINER STARTING =====")
-
 class StreamingService(audio_stream_pb2_grpc.StreamingServicer):
     def Stream(self, request_iterator, context):
         print("Server started, waiting for audio stream...")
