@@ -238,8 +238,8 @@ def parse_args():
                         help="Set the logging level")
     parser.add_argument('--log_filename', type=str, default="server.log", help="Log filename")
     parser.add_argument('--server_ip', type=str, default='0.0.0.0', help="IP address for server")
-    parser.add_argument('--grpc_port', type=int, default=443, help="Port for gRPC server")
-    parser.add_argument('--grpc_secure_port', type=int, default=10443, help="Port for gRPC server with ssl")
+    parser.add_argument('--grpc_port', type=int, default=10080, help="Port for gRPC server")
+    parser.add_argument('--grpc_secure_port', type=int, default=443, help="Port for gRPC server with ssl")
     parser.add_argument('--http_port', type=int, default=8000, help="Port for http server to download outputs")
 
     return parser.parse_args()
