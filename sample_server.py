@@ -2,7 +2,7 @@ import os
 import grpc
 import logging
 import argparse
-import audio_stream_pb2_grpc
+import ringcx_streaming_pb2_grpc
 import threading
 import wave
 from pathlib import Path
@@ -10,12 +10,12 @@ from concurrent import futures
 from google.protobuf.empty_pb2 import Empty
 from flask import Flask, send_file, Response
 import time
-import audio_stream_pb2
+import ringcx_streaming_pb2
 
 app = Flask(__name__)
 OUTPUT_FOLDER = 'saved_audio'
 
-class StreamingService(audio_stream_pb2_grpc.StreamingServicer):
+class StreamingService(ringcx_streaming_pb2_grpc.StreamingServicer):
     def Stream(self, request_iterator, context):
         # Get audio format from metadata if provided
         metadata = dict(context.invocation_metadata())
@@ -57,7 +57,7 @@ class StreamingService(audio_stream_pb2_grpc.StreamingServicer):
                 if event.segment_start.HasField('audio_format'):
                     fmt = event.segment_start.audio_format
                     # Update audio format from segment_start
-                    codec_name = audio_stream_pb2.Codec.Name(fmt.codec)
+                    codec_name = ringcx_streaming_pb2.Codec.Name(fmt.codec)
                     logger.info(f"Audio format from segment_start: codec={codec_name}, rate={fmt.rate}Hz")
                     audio_format['encoding'] = codec_name
                     audio_format['sample_rate'] = fmt.rate
@@ -99,7 +99,7 @@ class StreamingService(audio_stream_pb2_grpc.StreamingServicer):
 
 def serve(server_ip, grpc_port, grpc_secure_port):
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
-    audio_stream_pb2_grpc.add_StreamingServicer_to_server(StreamingService(), server)
+    ringcx_streaming_pb2_grpc.add_StreamingServicer_to_server(StreamingService(), server)
     
     # Insecure port
     server_address = f'{server_ip}:{grpc_port}'
