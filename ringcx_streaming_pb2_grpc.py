@@ -4,7 +4,7 @@ import grpc
 import warnings
 
 from google.protobuf import empty_pb2 as google_dot_protobuf_dot_empty__pb2
-import ringcx_streaming_pb2 as proto_dot_ringcx__streaming__pb2
+import ringcx_streaming_pb2 as ringcx__streaming__pb2
 
 GRPC_GENERATED_VERSION = '1.71.0'
 GRPC_VERSION = grpc.__version__
@@ -19,7 +19,7 @@ except ImportError:
 if _version_not_supported:
     raise RuntimeError(
         f'The grpc package installed is at version {GRPC_VERSION},'
-        + f' but the generated code in proto/ringcx_streaming_pb2_grpc.py depends on'
+        + f' but the generated code in ringcx_streaming_pb2_grpc.py depends on'
         + f' grpcio>={GRPC_GENERATED_VERSION}.'
         + f' Please upgrade your grpc module to grpcio>={GRPC_GENERATED_VERSION}'
         + f' or downgrade your generated code using grpcio-tools<={GRPC_VERSION}.'
@@ -37,7 +37,7 @@ class StreamingStub(object):
         """
         self.Stream = channel.stream_unary(
                 '/ringcentral.ringcx.streaming.v1beta2.Streaming/Stream',
-                request_serializer=proto_dot_ringcx__streaming__pb2.StreamEvent.SerializeToString,
+                request_serializer=ringcx__streaming__pb2.StreamEvent.SerializeToString,
                 response_deserializer=google_dot_protobuf_dot_empty__pb2.Empty.FromString,
                 _registered_method=True)
 
@@ -58,7 +58,7 @@ def add_StreamingServicer_to_server(servicer, server):
     rpc_method_handlers = {
             'Stream': grpc.stream_unary_rpc_method_handler(
                     servicer.Stream,
-                    request_deserializer=proto_dot_ringcx__streaming__pb2.StreamEvent.FromString,
+                    request_deserializer=ringcx__streaming__pb2.StreamEvent.FromString,
                     response_serializer=google_dot_protobuf_dot_empty__pb2.Empty.SerializeToString,
             ),
     }
@@ -87,7 +87,7 @@ class Streaming(object):
             request_iterator,
             target,
             '/ringcentral.ringcx.streaming.v1beta2.Streaming/Stream',
-            proto_dot_ringcx__streaming__pb2.StreamEvent.SerializeToString,
+            ringcx__streaming__pb2.StreamEvent.SerializeToString,
             google_dot_protobuf_dot_empty__pb2.Empty.FromString,
             options,
             channel_credentials,
