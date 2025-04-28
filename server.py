@@ -26,7 +26,7 @@ class StreamingService(audio_stream_pb2_grpc.StreamingServicer):
         # Configure Google Cloud Speech client
         client = speech.SpeechClient()
         config = speech.RecognitionConfig(
-            encoding=speech.RecognitionConfig.AudioEncoding.LINEAR16,
+            encoding=speech.RecognitionConfig.AudioEncoding.OGG_OPUS,
             sample_rate_hertz=16000,
             language_code="en-US",
             enable_automatic_punctuation=True,
