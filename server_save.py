@@ -2,114 +2,111 @@ import grpc
 import concurrent.futures
 import signal
 import sys
-import time
-import threading
-import traceback
 import os
 import wave
+import time
 import datetime
+import threading
 import audio_stream_pb2
 import audio_stream_pb2_grpc
 import logging
 
-# Set up logging to stdout
+# Set up logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[logging.StreamHandler(sys.stdout)]
 )
-logger = logging.getLogger('audio-saver-server')
+logger = logging.getLogger('audio-saver')
 
-# Create audio save directory if it doesn't exist
+# Create directory for saved audio files
 AUDIO_SAVE_DIR = os.path.join(os.getcwd(), "saved_audio")
 os.makedirs(AUDIO_SAVE_DIR, exist_ok=True)
 
 class AudioSaverService(audio_stream_pb2_grpc.StreamingServicer):
     def Stream(self, request_iterator, context):
-        logger.info("Server started, waiting for audio stream...")
+        logger.info("Starting to record 5 seconds of audio...")
         
-        # Create a unique session ID for this stream
+        # Generate a unique filename using timestamp
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        session_id = None
+        session_id = f"session_{timestamp}"
+        
+        # Buffer to collect audio data
         audio_data = bytearray()
         
+        # Set a 5-second timer to stop recording
+        recording_done = threading.Event()
+        
+        def stop_recording_after_timeout():
+            time.sleep(5)  # Sleep for 5 seconds
+            recording_done.set()
+            logger.info("5-second timer expired, stopping recording")
+        
+        # Start the timer in a separate thread
+        timer_thread = threading.Thread(target=stop_recording_after_timeout)
+        timer_thread.daemon = True
+        timer_thread.start()
+        
         try:
+            # Process incoming audio until timer expires
             for stream_event in request_iterator:
-                # Get session ID from first event
-                if session_id is None and stream_event.session_id:
-                    session_id = stream_event.session_id
+                if recording_done.is_set():
+                    logger.info("Recording time limit reached, stopping collection")
+                    break
                     
-                # If no session ID was provided, use timestamp
-                if session_id is None:
-                    session_id = f"session_{timestamp}"
-                    
-                # Extract and save audio payload
                 if stream_event.HasField('segment_media'):
                     audio_chunk = stream_event.segment_media.audio_content.payload
                     audio_data.extend(audio_chunk)
                     
-                    # Log progress
-                    if len(audio_data) % (1024 * 10) < 1024:  # Log every ~10KB
-                        logger.info(f"Session {session_id}: Received {len(audio_data)/1024:.2f} KB of audio data")
+                    # Log current data size
+                    logger.info(f"Received {len(audio_data)/1024:.2f} KB of audio data")
             
-            # Save the complete audio file when the stream ends
+            # Save the audio to file
             if audio_data:
-                self._save_audio_file(session_id, audio_data)
+                filepath = self._save_audio_file(session_id, audio_data)
+                logger.info(f"Audio saved to {filepath}")
+            else:
+                logger.warning("No audio data received during the 5-second window")
                 
-            logger.info(f"Audio saving completed for session {session_id}")
-            
         except Exception as e:
-            logger.error(f"Error during audio saving: {e}")
+            logger.error(f"Error during audio recording: {e}")
             context.set_code(grpc.StatusCode.INTERNAL)
-            context.set_details(f"Audio saving error: {str(e)}")
+            context.set_details(str(e))
             
         return audio_stream_pb2.google_dot_protobuf_dot_empty__pb2.Empty()
     
     def _save_audio_file(self, session_id, audio_data):
-        """Save the audio data to a WAV file"""
-        # Create a filename with session ID and timestamp
-        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"{session_id}_{timestamp}.wav"
+        """Save audio data to a WAV file"""
+        filename = f"{session_id}.wav"
         filepath = os.path.join(AUDIO_SAVE_DIR, filename)
         
-        # Create a WAV file (assuming LINEAR16 format, 16kHz, mono)
+        # Create WAV file (LINEAR16 format, 16kHz, mono)
         with wave.open(filepath, 'wb') as wf:
-            wf.setnchannels(1)
-            wf.setsampwidth(2)  # 2 bytes for 16-bit audio
-            wf.setframerate(16000)
+            wf.setnchannels(1)  # Mono
+            wf.setsampwidth(2)  # 16-bit audio (2 bytes)
+            wf.setframerate(16000)  # 16kHz
             wf.writeframes(audio_data)
             
-        logger.info(f"Saved audio file: {filepath} ({len(audio_data)/1024:.2f} KB)")
         return filepath
 
-# Global flag to control server restart
-should_restart = True
-
 def serve():
-    global should_restart
-    
-    # Health check state
-    server_healthy = {'status': True}
-    
-    # Create the server instance
-    server = grpc.server(concurrent.futures.ThreadPoolExecutor(max_workers=10))
+    # Create and configure the gRPC server
+    server = grpc.server(concurrent.futures.ThreadPoolExecutor(max_workers=5))
     audio_stream_pb2_grpc.add_StreamingServicer_to_server(
         AudioSaverService(), server
     )
-        
-    # Get the port from the environment variable or default to 8080
-    port = int(os.environ.get("PORT", 443))
     
-    # For Cloud Run, use 0.0.0.0 instead of [::]
-    host = '0.0.0.0' if os.environ.get("K_SERVICE") else '[::]'
+    # Get port from environment or use default
+    port = int(os.environ.get("PORT", 443))
+    host = '0.0.0.0'  # Listen on all interfaces
     server_address = f'{host}:{port}'
     
-    # Check if SSL certificates are available
+    # Configure SSL if certificates are available
     cert_file = os.environ.get('SSL_CERT_FILE')
     key_file = os.environ.get('SSL_KEY_FILE')
     
     if cert_file and key_file and os.path.exists(cert_file) and os.path.exists(key_file):
-        # Use secure connection with SSL certificates
+        # Use secure connection with SSL
         with open(cert_file, 'rb') as f:
             cert_data = f.read()
         with open(key_file, 'rb') as f:
@@ -123,112 +120,23 @@ def serve():
         server.add_insecure_port(server_address)
         logger.info(f"Server started without SSL at {server_address} (insecure)")
     
+    # Start server
     server.start()
     
-    # Setup server health monitoring thread
-    def health_monitor():
-        consecutive_failures = 0
-        
-        while True:
-            time.sleep(30)  # Check every 30 seconds
-            
-            try:
-                # Add health check logic here
-                # Example: Check for external dependencies
-                # If an issue is detected:
-                if not server_healthy['status']:
-                    consecutive_failures += 1
-                    print(f"Health check failed {consecutive_failures} time(s) in a row")
-                    
-                    if consecutive_failures >= 3:
-                        print("Critical health check failure detected. Initiating server restart...")
-                        restart_server()
-                        break
-                else:
-                    consecutive_failures = 0
-                    
-            except Exception as e:
-                print(f"Error in health monitoring: {e}")
-                traceback.print_exc()
-    
-    # Start the health monitor in a background thread
-    monitor_thread = threading.Thread(target=health_monitor, daemon=True)
-    monitor_thread.start()
-    
-    # Setup graceful shutdown
-    def graceful_shutdown(signum, frame):
-        global should_restart
-        print("\nReceived signal to terminate. Shutting down server gracefully...")
-        # Prevent auto-restart on shutdown signal
-        should_restart = False
-        # Stop server (if not already stopped)
-        server.stop(grace=5)
-        print("Server stopped successfully")
+    # Handle graceful shutdown
+    def handle_shutdown(signum, frame):
+        logger.info("Shutting down server...")
+        server.stop(grace=2)
         sys.exit(0)
     
-    # Register signal handlers
-    signal.signal(signal.SIGINT, graceful_shutdown)
-    signal.signal(signal.SIGTERM, graceful_shutdown)
+    signal.signal(signal.SIGINT, handle_shutdown)
+    signal.signal(signal.SIGTERM, handle_shutdown)
     
     try:
         server.wait_for_termination()
     except KeyboardInterrupt:
-        should_restart = False
-        print("\nKeyboard interrupt received. Shutting down server gracefully...")
-        server.stop(grace=5)
-        print("Server stopped successfully")
-    except Exception as e:
-        print(f"Server error: {e}")
-        traceback.print_exc()
-        # Let the restart logic handle this
-
-def restart_server():
-    """Function to restart the server"""
-    global should_restart
-    
-    if not should_restart:
-        print("Server restart disabled. Exiting...")
-        return
-        
-    print("Restarting server in 5 seconds...")
-    time.sleep(5)
-    
-    # Re-execute the current script
-    os.execv(sys.executable, ['python'] + sys.argv)
+        handle_shutdown(None, None)
 
 if __name__ == '__main__':
-    # Keep track of failures for exponential backoff
-    failures = 0
-    max_failures = 10
-    
-    while should_restart:
-        try:
-            # Reset connection pools or other resources that might be stale
-            # Connection pools are often implemented by client libraries
-            
-            print(f"Starting server (attempt {failures+1})")
-            serve()
-            
-            # If we get here and should_restart is still True, it means
-            # the server exited unexpectedly
-            failures += 1
-            
-            # Implement exponential backoff
-            if failures >= max_failures:
-                print(f"Too many failures ({failures}). Giving up.")
-                sys.exit(1)
-                
-            # Calculate backoff time with jitter
-            backoff_seconds = min(30, (2 ** failures) + (failures % 3))
-            print(f"Server will restart in {backoff_seconds} seconds...")
-            time.sleep(backoff_seconds)
-            
-        except KeyboardInterrupt:
-            print("\nKeyboard interrupt received. Exiting...")
-            should_restart = False
-            sys.exit(0)
-        except Exception as e:
-            print(f"Critical error in main loop: {e}")
-            traceback.print_exc()
-            failures += 1
-            time.sleep(5) 
+    logger.info("Starting 5-second audio recording server")
+    serve() 
