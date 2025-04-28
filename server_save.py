@@ -80,6 +80,7 @@ class AudioSaverService(audio_stream_pb2_grpc.StreamingServicer):
                     if segment_start.HasField('audio_format'):
                         fmt = segment_start.audio_format
                         audio_format['codec'] = audio_stream_pb2.Codec.Name(fmt.codec)
+                        print(f"Audio format: codec={audio_format['codec']}, rate={audio_format['rate']}Hz, ptime={audio_format['ptime']}ms")
                         audio_format['rate'] = fmt.rate
                         audio_format['ptime'] = fmt.ptime
                         logger.info(f"Audio format: codec={audio_format['codec']}, rate={audio_format['rate']}Hz, ptime={audio_format['ptime']}ms")
