@@ -27,6 +27,7 @@ class StreamingService(ringcx_streaming_pb2_grpc.StreamingServicer):
         current_segment_id = None
         
         for event in request_iterator:
+            logger.info(f"Event: {event}")
             if event.HasField('dialog_init'):
                 session_id = event.session_id
                 current_session_id = session_id
