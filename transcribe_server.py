@@ -2,8 +2,6 @@ import grpc
 import concurrent.futures
 import signal
 import sys
-import time
-import threading
 import traceback
 import os
 from google.cloud import speech
@@ -65,20 +63,14 @@ class StreamingService(ringcx_streaming_pb2_grpc.StreamingServicer):
             
         return Empty()
 
-should_restart = True
-
 def serve():
-    global should_restart
-    
-    server_healthy = {'status': True}
-    
     server = grpc.server(concurrent.futures.ThreadPoolExecutor(max_workers=10))
     ringcx_streaming_pb2_grpc.add_StreamingServicer_to_server(
         StreamingService(), server
     )
-        
-    port = int(os.environ.get("PORT", 443))
-    host = '0.0.0.0' if os.environ.get("K_SERVICE") else '[::]'
+    
+    port = int(os.environ.get("PORT", 443)) # We only support 443 port at the moment
+    host = '0.0.0.0'
     server_address = f'{host}:{port}'
     
     cert_file = os.environ.get('SSL_CERT_FILE')
@@ -99,35 +91,8 @@ def serve():
     
     server.start()
     
-    def health_monitor():
-        consecutive_failures = 0
-        
-        while True:
-            time.sleep(30)
-            
-            try:
-                if not server_healthy['status']:
-                    consecutive_failures += 1
-                    logger.warning(f"Health check failed {consecutive_failures} time(s) in a row")
-                    
-                    if consecutive_failures >= 3:
-                        logger.warning("Critical health check failure detected. Initiating server restart...")
-                        restart_server()
-                        break
-                else:
-                    consecutive_failures = 0
-                    
-            except Exception as e:
-                logger.error(f"Error in health monitoring: {e}")
-                traceback.print_exc()
-    
-    monitor_thread = threading.Thread(target=health_monitor, daemon=True)
-    monitor_thread.start()
-    
     def graceful_shutdown(signum, frame):
-        global should_restart
         logger.info("Received signal to terminate. Shutting down server gracefully...")
-        should_restart = False
         server.stop(grace=5)
         logger.info("Server stopped successfully")
         sys.exit(0)
@@ -138,7 +103,6 @@ def serve():
     try:
         server.wait_for_termination()
     except KeyboardInterrupt:
-        should_restart = False
         logger.info("Keyboard interrupt received. Shutting down server gracefully...")
         server.stop(grace=5)
         logger.info("Server stopped successfully")
@@ -146,43 +110,14 @@ def serve():
         logger.error(f"Server error: {e}")
         traceback.print_exc()
 
-def restart_server():
-    global should_restart
-    
-    if not should_restart:
-        logger.info("Server restart disabled. Exiting...")
-        return
-        
-    logger.info("Restarting server in 5 seconds...")
-    time.sleep(5)
-    
-    os.execv(sys.executable, ['python'] + sys.argv)
-
 if __name__ == '__main__':
-    failures = 0
-    max_failures = 10
-    
-    while should_restart:
-        try:
-            logger.info(f"Starting server (attempt {failures+1})")
-            serve()
-            
-            failures += 1
-            
-            if failures >= max_failures:
-                logger.error(f"Too many failures ({failures}). Giving up.")
-                sys.exit(1)
-                
-            backoff_seconds = min(30, (2 ** failures) + (failures % 3))
-            logger.info(f"Server will restart in {backoff_seconds} seconds...")
-            time.sleep(backoff_seconds)
-            
-        except KeyboardInterrupt:
-            logger.info("Keyboard interrupt received. Exiting...")
-            should_restart = False
-            sys.exit(0)
-        except Exception as e:
-            logger.error(f"Critical error in main loop: {e}")
-            traceback.print_exc()
-            failures += 1
-            time.sleep(5) 
+    try:
+        logger.info("Starting server")
+        serve()
+    except KeyboardInterrupt:
+        logger.info("Keyboard interrupt received. Exiting...")
+        sys.exit(0)
+    except Exception as e:
+        logger.error(f"Critical error in main loop: {e}")
+        traceback.print_exc()
+        sys.exit(1) 
