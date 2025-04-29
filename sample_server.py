@@ -16,73 +16,94 @@ app = Flask(__name__)
 OUTPUT_FOLDER = 'saved_audio'
 
 class StreamingService(ringcx_streaming_pb2_grpc.StreamingServicer):
+    def __init__(self):
+        self.segments = {}  # Dictionary to track all active segments
+
     def Stream(self, request_iterator, context):
         logger.info(f"Context: {context}")
-        audio_format = {}
         
         # Create output directory
         Path(OUTPUT_FOLDER).mkdir(exist_ok=True)
         
-        current_session_id = None
-        current_segment_id = None
-        
         for event in request_iterator:
             logger.info(f"Event: {event}")
+            session_id = event.session_id
+            
             if event.HasField('dialog_init'):
-                session_id = event.session_id
-                current_session_id = session_id
                 dialog_id = event.dialog_init.dialog.id
                 logger.info(f"{session_id}: DialogInit, dialog_id: {dialog_id}")
                 create_session_dir(session_id)
                 write_session_logs(session_id, f"DialogInit: {event}")
-            if event.HasField('segment_start'):
-                session_id = event.session_id
-                current_session_id = session_id
+                
+            elif event.HasField('segment_start'):
                 segment_id = event.segment_start.segment_id
-                current_segment_id = segment_id
                 logger.info(f"{session_id}: SegmentStart, segment_id: {segment_id}")
                 write_session_logs(session_id, f"SegmentStart: {event}")
+                
+                # Create entry for this segment
+                segment_key = f"{session_id}_{segment_id}"
+                self.segments[segment_key] = {
+                    'session_id': session_id,
+                    'segment_id': segment_id,
+                    'audio_format': {}
+                }
+                
                 # Extract audio format from segment_start if available
                 if event.segment_start.HasField('audio_format'):
                     fmt = event.segment_start.audio_format
-                    logger.info(f"Audio format from segment_start: {fmt}")
-                    # Update audio format from segment_start
                     codec_name = ringcx_streaming_pb2.Codec.Name(fmt.codec)
                     logger.info(f"Audio format from segment_start: codec={codec_name}, rate={fmt.rate}Hz")
-                    audio_format['encoding'] = codec_name
-                    audio_format['sample_rate'] = fmt.rate
+                    
+                    # Store audio format for this specific segment
+                    self.segments[segment_key]['audio_format'] = {
+                        'encoding': codec_name,
+                        'sample_rate': fmt.rate,
+                        'channels': 1  # Default to mono
+                    }
+                    
                     # Set sample width based on codec
                     if codec_name in ['PCMA', 'PCMU']:  # A-law and μ-law are 8-bit
-                        audio_format['sample_width'] = 1
+                        self.segments[segment_key]['audio_format']['sample_width'] = 1
                     elif codec_name in ['L16', 'LINEAR16']:  # 16-bit PCM
-                        audio_format['sample_width'] = 2
+                        self.segments[segment_key]['audio_format']['sample_width'] = 2
+                
             elif event.HasField('segment_media'):
-                session_id = event.session_id
-                current_session_id = session_id
                 segment_id = event.segment_media.segment_id
-                current_segment_id = segment_id
                 payload = event.segment_media.audio_content.payload
                 seq = event.segment_media.audio_content.seq
                 duration = event.segment_media.audio_content.duration
+                
                 logger.info(f"{session_id}: SegmentMedia, segment_id: {segment_id}, payload size: {len(payload)}, seq: {seq}, duration: {duration}")
                 write_session_logs(session_id, f"SegmentMedia, segment_id: {segment_id}, payload size: {len(payload)}, seq: {seq}, duration: {duration}")
                 write_audio_content(session_id, segment_id, payload)
+                
             elif event.HasField('segment_stop'):
-                session_id = event.session_id
                 segment_id = event.segment_stop.segment_id
                 logger.info(f"{session_id}: SegmentStop, segment_id: {segment_id}")
                 write_session_logs(session_id, f"SegmentStop: {event}")
                 
                 # When a segment stops, convert the binary file to WAV
-                if current_session_id and current_segment_id:
-                    convert_bin_to_wav(current_session_id, current_segment_id, audio_format)
-            else:
-                pass
+                segment_key = f"{session_id}_{segment_id}"
+                if segment_key in self.segments:
+                    audio_format = self.segments[segment_key]['audio_format']
+                    convert_bin_to_wav(session_id, segment_id, audio_format)
+                    # Clean up after conversion
+                    del self.segments[segment_key]
+            
             logger.debug(f"Event: {event}")
         
-        # Convert any remaining files when the stream ends
-        if current_session_id and current_segment_id:
-            convert_bin_to_wav(current_session_id, current_segment_id, audio_format)
+        # Convert any remaining segments when stream ends
+        segments_to_remove = []
+        for segment_key, segment_data in self.segments.items():
+            session_id = segment_data['session_id']
+            segment_id = segment_data['segment_id']
+            audio_format = segment_data['audio_format']
+            convert_bin_to_wav(session_id, segment_id, audio_format)
+            segments_to_remove.append(segment_key)
+        
+        # Clean up processed segments
+        for key in segments_to_remove:
+            del self.segments[key]
             
         return Empty()
 
@@ -155,6 +176,16 @@ def convert_bin_to_wav(session_id, segment_id, audio_format):
         logger.warning(f"Binary file {bin_file} is empty or doesn't exist")
         return
     
+    # Ensure we have the minimum required audio format parameters
+    if not audio_format or 'sample_rate' not in audio_format:
+        logger.warning(f"Missing audio format information for {session_id}_{segment_id}")
+        return
+    
+    # Set default values if not provided
+    channels = audio_format.get('channels', 1)  # Default to mono
+    sample_width = audio_format.get('sample_width', 2)  # Default to 16-bit
+    sample_rate = audio_format.get('sample_rate', 8000)  # Default to 8kHz
+    
     try:
         # Read binary data
         with open(bin_file, 'rb') as f:
@@ -162,12 +193,12 @@ def convert_bin_to_wav(session_id, segment_id, audio_format):
         
         # Create WAV file
         with wave.open(wav_file, 'wb') as wf:
-            wf.setnchannels(audio_format['channels'])
-            wf.setsampwidth(audio_format['sample_width'])
-            wf.setframerate(audio_format['sample_rate'])
+            wf.setnchannels(channels)
+            wf.setsampwidth(sample_width)
+            wf.setframerate(sample_rate)
             wf.writeframes(audio_data)
         
-        logger.info(f"Converted {bin_file} to WAV format: {wav_file}")
+        logger.info(f"Converted {bin_file} to WAV format: {wav_file}, format: channels={channels}, sample_width={sample_width}, rate={sample_rate}Hz")
     except Exception as e:
         logger.error(f"Error converting {bin_file} to WAV: {e}")
 
@@ -197,21 +228,66 @@ def healthcheck():
 
 @app.route('/')
 def list_files():
-    # Get all binary files
-    bin_files = get_all_files(OUTPUT_FOLDER)
-    bin_links = ''.join([f'<li><a href="/files/{file}">{file}</a></li>' for file in bin_files])
+    # Group files by session ID
+    sessions = {}
     
-    # Get all WAV files
-    wav_files = get_all_files(OUTPUT_FOLDER)
-    wav_links = ''.join([f'<li><a href="/files/{file}">{file}</a> <audio controls><source src="/files/{file}" type="audio/wav"></audio></li>' for file in wav_files])
+    # Get all files
+    all_files = get_all_files(OUTPUT_FOLDER)
     
-    return f"""
-    <h1>Recorded Audio Files</h1>
-    <h2>WAV Files (Playable)</h2>
-    <ul>{wav_links}</ul>
-    <h2>Raw Binary Files</h2>
-    <ul>{bin_links}</ul>
-    """
+    for file_path in all_files:
+        # Skip session log files from the main listing
+        if file_path.endswith('/session.log'):
+            continue
+            
+        parts = file_path.split('/')
+        file_name = parts[-1]
+        
+        if '_' in file_name:
+            # For session_segment named files
+            session_segment = file_name.split('.')[0]  # Remove extension
+            if session_segment:
+                parts = session_segment.split('_')
+                if len(parts) >= 2:
+                    session_id = parts[0]
+                    if session_id not in sessions:
+                        sessions[session_id] = {'wav_files': [], 'bin_files': []}
+                    
+                    if file_name.endswith('.wav'):
+                        sessions[session_id]['wav_files'].append(file_path)
+                    elif file_name.endswith('.bin'):
+                        sessions[session_id]['bin_files'].append(file_path)
+        elif len(parts) > 2:
+            # For files organized in session directories
+            session_id = parts[-2]
+            if session_id not in sessions:
+                sessions[session_id] = {'wav_files': [], 'bin_files': []}
+                
+            if file_name.endswith('.wav'):
+                sessions[session_id]['wav_files'].append(file_path)
+            elif file_name.endswith('.bin'):
+                sessions[session_id]['bin_files'].append(file_path)
+    
+    # Generate HTML output
+    html_output = "<h1>Recorded Audio Files</h1>"
+    
+    for session_id, files in sorted(sessions.items()):
+        html_output += f"<h2>Session: {session_id}</h2>"
+        
+        if files['wav_files']:
+            html_output += "<h3>WAV Files (Playable)</h3><ul>"
+            for file in sorted(files['wav_files']):
+                file_name = file.split('/')[-1]
+                html_output += f'<li><a href="/files/{file}">{file_name}</a> <audio controls><source src="/files/{file}" type="audio/wav"></audio></li>'
+            html_output += "</ul>"
+            
+        if files['bin_files']:
+            html_output += "<h3>Raw Binary Files</h3><ul>"
+            for file in sorted(files['bin_files']):
+                file_name = file.split('/')[-1]
+                html_output += f'<li><a href="/files/{file}">{file_name}</a></li>'
+            html_output += "</ul>"
+    
+    return html_output
 
 @app.route('/files/<path:filename>')
 def download_file(filename):
