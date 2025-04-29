@@ -7,8 +7,9 @@ import threading
 import traceback
 import os # Import the os module
 from google.cloud import speech
-import audio_stream_pb2
-import audio_stream_pb2_grpc
+import ringcx_streaming_pb2
+import ringcx_streaming_pb2_grpc
+from google.protobuf.empty_pb2 import Empty
 import logging
 
 # Set up logging to stdout
@@ -19,15 +20,15 @@ logging.basicConfig(
 )
 logger = logging.getLogger('speech-server')
 
-class StreamingService(audio_stream_pb2_grpc.StreamingServicer):
+class StreamingService(ringcx_streaming_pb2_grpc.StreamingServicer):
     def Stream(self, request_iterator, context):
         print("Server started, waiting for audio stream...")
         
         # Configure Google Cloud Speech client
         client = speech.SpeechClient()
         config = speech.RecognitionConfig(
-            encoding=speech.RecognitionConfig.AudioEncoding.OGG_OPUS,
-            sample_rate_hertz=16000,
+            encoding=speech.RecognitionConfig.AudioEncoding.MULAW,
+            sample_rate_hertz=8000,
             language_code="en-US",
             enable_automatic_punctuation=True,
         )
@@ -74,7 +75,7 @@ class StreamingService(audio_stream_pb2_grpc.StreamingServicer):
             context.set_code(grpc.StatusCode.INTERNAL)
             context.set_details(f"Transcription error: {str(e)}")
             
-        return audio_stream_pb2.google_dot_protobuf_dot_empty__pb2.Empty()
+        return Empty()
 
 # Global flag to control server restart
 should_restart = True
@@ -87,7 +88,7 @@ def serve():
     
     # Create the server instance
     server = grpc.server(concurrent.futures.ThreadPoolExecutor(max_workers=10))
-    audio_stream_pb2_grpc.add_StreamingServicer_to_server(
+    ringcx_streaming_pb2_grpc.add_StreamingServicer_to_server(
         StreamingService(), server
     )
         
