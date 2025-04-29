@@ -19,6 +19,7 @@ class StreamingService(ringcx_streaming_pb2_grpc.StreamingServicer):
     def Stream(self, request_iterator, context):
         # Get audio format from metadata if provided
         metadata = dict(context.invocation_metadata())
+        logger.info(f"Metadata: {metadata}")
         audio_encoding = metadata.get('x-audio-encoding', 'LINEAR16')
         sample_rate = int(metadata.get('x-sample-rate', '8000'))
         channels = int(metadata.get('x-channels', '1'))
