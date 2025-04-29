@@ -24,8 +24,6 @@ class StreamingService(ringcx_streaming_pb2_grpc.StreamingServicer):
                 if stream_event.HasField('segment_media'):
                     payload_size = len(stream_event.segment_media.audio_content.payload)
                     logger.info(f"Received segment media with payload size: {payload_size} bytes")
-                elif stream_event.HasField('segment_metadata'):
-                    logger.info(f"Received segment metadata: {stream_event.segment_metadata}")
                 else:
                     logger.info(f"Received other stream event type")
             
