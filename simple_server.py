@@ -49,11 +49,24 @@ def serve():
     )
     
     port = int(os.environ.get("PORT", 443))
-    host = '0.0.0.0' if os.environ.get("K_SERVICE") else '[::]'
+    host = '0.0.0.0'
     server_address = f'{host}:{port}'
     
-    server.add_insecure_port(server_address)
-    logger.info(f"Simple server started at {server_address} (insecure)")
+    cert_file = os.environ.get('SSL_CERT_FILE')
+    key_file = os.environ.get('SSL_KEY_FILE')
+    
+    if cert_file and key_file and os.path.exists(cert_file) and os.path.exists(key_file):
+        with open(cert_file, 'rb') as f:
+            cert_data = f.read()
+        with open(key_file, 'rb') as f:
+            key_data = f.read()
+            
+        server_credentials = grpc.ssl_server_credentials([(key_data, cert_data)])
+        server.add_secure_port(server_address, server_credentials)
+        logger.info(f"Server started with SSL at {server_address}")
+    else:
+        server.add_insecure_port(server_address)
+        logger.info(f"Server started without SSL at {server_address} (insecure)")
     
     server.start()
     
