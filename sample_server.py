@@ -20,13 +20,11 @@ class StreamingService(ringcx_streaming_pb2_grpc.StreamingServicer):
         self.segments = {}  # Dictionary to track all active segments
 
     def Stream(self, request_iterator, context):
-        logger.info(f"Context: {context}")
         
         # Create output directory
         Path(OUTPUT_FOLDER).mkdir(exist_ok=True)
         
         for event in request_iterator:
-            logger.info(f"Event: {event}")
             session_id = event.session_id
             
             if event.HasField('dialog_init'):
@@ -183,13 +181,30 @@ def convert_bin_to_wav(session_id, segment_id, audio_format):
     
     # Set default values if not provided
     channels = audio_format.get('channels', 1)  # Default to mono
-    sample_width = audio_format.get('sample_width', 2)  # Default to 16-bit
+    sample_width = audio_format.get('sample_width', 1)  # Default to 8-bit
     sample_rate = audio_format.get('sample_rate', 8000)  # Default to 8kHz
+    encoding = audio_format.get('encoding', 'PCMU')  # Default to PCM
     
     try:
         # Read binary data
         with open(bin_file, 'rb') as f:
             audio_data = f.read()
+        
+        # Convert based on codec type
+        import audioop
+        
+        if encoding == 'PCMA':  # A-law
+            # Convert A-law to PCM (2 bytes per sample)
+            audio_data = audioop.alaw2lin(audio_data, 2)
+            sample_width = 2  # A-law conversion results in 16-bit PCM
+        
+        elif encoding == 'PCMU':  # μ-law
+            # Convert μ-law to PCM (2 bytes per sample)
+            audio_data = audioop.ulaw2lin(audio_data, 2)
+            sample_width = 2  # μ-law conversion results in 16-bit PCM
+            
+        elif encoding not in ['L16', 'LINEAR16']:
+            logger.warning(f"Unsupported codec: {encoding}, using raw data")
         
         # Create WAV file
         with wave.open(wav_file, 'wb') as wf:
@@ -198,7 +213,7 @@ def convert_bin_to_wav(session_id, segment_id, audio_format):
             wf.setframerate(sample_rate)
             wf.writeframes(audio_data)
         
-        logger.info(f"Converted {bin_file} to WAV format: {wav_file}, format: channels={channels}, sample_width={sample_width}, rate={sample_rate}Hz")
+        logger.info(f"Converted {bin_file} to WAV format: {wav_file}, format: codec={encoding}, channels={channels}, sample_width={sample_width}, rate={sample_rate}Hz")
     except Exception as e:
         logger.error(f"Error converting {bin_file} to WAV: {e}")
 
