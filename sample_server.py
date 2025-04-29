@@ -17,21 +17,8 @@ OUTPUT_FOLDER = 'saved_audio'
 
 class StreamingService(ringcx_streaming_pb2_grpc.StreamingServicer):
     def Stream(self, request_iterator, context):
-        # Get audio format from metadata if provided
-        metadata = dict(context.invocation_metadata())
-        logger.info(f"Metadata: {metadata}")
-        audio_encoding = metadata.get('x-audio-encoding', 'LINEAR16')
-        sample_rate = int(metadata.get('x-sample-rate', '8000'))
-        channels = int(metadata.get('x-channels', '1'))
-        logger.info(f"Audio parameters from headers: encoding={audio_encoding}, sample_rate={sample_rate}Hz, channels={channels}")
-        
-        # Track audio format for this session
-        audio_format = {
-            'encoding': audio_encoding,
-            'sample_rate': sample_rate,
-            'channels': channels,
-            'sample_width': 2  # Default to 2 bytes (16-bit)
-        }
+        logger.info(f"Context: {context}")
+        audio_format = {}
         
         # Create output directory
         Path(OUTPUT_FOLDER).mkdir(exist_ok=True)
