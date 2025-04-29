@@ -58,7 +58,7 @@ class StreamingService(ringcx_streaming_pb2_grpc.StreamingServicer):
                 if event.segment_start.HasField('audio_format'):
                     fmt = event.segment_start.audio_format
                     codec_name = ringcx_streaming_pb2.Codec.Name(fmt.codec)
-                    logger.info(f"Audio format from segment_start: codec={codec_name}, rate={fmt.rate}Hz")
+                    # logger.info(f"Audio format from segment_start: codec={codec_name}, rate={fmt.rate}Hz")
                     
                     # Store audio format for this specific segment
                     self.segments[segment_key]['audio_format'] = {
