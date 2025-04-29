@@ -11,6 +11,11 @@ from google.protobuf.empty_pb2 import Empty
 from flask import Flask, send_file, Response
 import time
 import ringcx_streaming_pb2
+import audioop
+# Google Cloud Speech imports
+from google.cloud import speech
+import queue
+import io
 
 app = Flask(__name__)
 OUTPUT_FOLDER = 'saved_audio'
@@ -18,6 +23,7 @@ OUTPUT_FOLDER = 'saved_audio'
 class StreamingService(ringcx_streaming_pb2_grpc.StreamingServicer):
     def __init__(self):
         self.segments = {}  # Dictionary to track all active segments
+        self.speech_client = speech.SpeechClient()
 
     def Stream(self, request_iterator, context):
         
@@ -43,7 +49,9 @@ class StreamingService(ringcx_streaming_pb2_grpc.StreamingServicer):
                 self.segments[segment_key] = {
                     'session_id': session_id,
                     'segment_id': segment_id,
-                    'audio_format': {}
+                    'audio_format': {},
+                    'audio_buffer': queue.Queue(),
+                    'transcription_thread': None
                 }
                 
                 # Extract audio format from segment_start if available
@@ -64,6 +72,15 @@ class StreamingService(ringcx_streaming_pb2_grpc.StreamingServicer):
                         self.segments[segment_key]['audio_format']['sample_width'] = 1
                     elif codec_name in ['L16', 'LINEAR16']:  # 16-bit PCM
                         self.segments[segment_key]['audio_format']['sample_width'] = 2
+                    
+                    # Start transcription thread for this segment
+                    transcription_thread = threading.Thread(
+                        target=self.stream_transcript,
+                        args=(segment_key,)
+                    )
+                    transcription_thread.daemon = True
+                    transcription_thread.start()
+                    self.segments[segment_key]['transcription_thread'] = transcription_thread
                 
             elif event.HasField('segment_media'):
                 segment_id = event.segment_media.segment_id
@@ -71,32 +88,42 @@ class StreamingService(ringcx_streaming_pb2_grpc.StreamingServicer):
                 seq = event.segment_media.audio_content.seq
                 duration = event.segment_media.audio_content.duration
                 
+                segment_key = f"{session_id}_{segment_id}"
                 logger.info(f"{session_id}: SegmentMedia, segment_id: {segment_id}, payload size: {len(payload)}, seq: {seq}, duration: {duration}")
                 write_session_logs(session_id, f"SegmentMedia, segment_id: {segment_id}, payload size: {len(payload)}, seq: {seq}, duration: {duration}")
-                write_audio_content(session_id, segment_id, payload)
+                
+                # Add audio data to the segment's buffer for transcription
+                if segment_key in self.segments:
+                    self.segments[segment_key]['audio_buffer'].put(payload)
                 
             elif event.HasField('segment_stop'):
                 segment_id = event.segment_stop.segment_id
                 logger.info(f"{session_id}: SegmentStop, segment_id: {segment_id}")
                 write_session_logs(session_id, f"SegmentStop: {event}")
                 
-                # When a segment stops, convert the binary file to WAV
+                # Signal end of audio stream for transcription
                 segment_key = f"{session_id}_{segment_id}"
                 if segment_key in self.segments:
-                    audio_format = self.segments[segment_key]['audio_format']
-                    convert_bin_to_wav(session_id, segment_id, audio_format)
-                    # Clean up after conversion
+                    self.segments[segment_key]['audio_buffer'].put(None)  # Signal end of stream
+                    
+                    # Wait for transcription to complete
+                    if self.segments[segment_key]['transcription_thread']:
+                        self.segments[segment_key]['transcription_thread'].join(timeout=5)
+                    
+                    # Clean up
                     del self.segments[segment_key]
             
             logger.debug(f"Event: {event}")
         
-        # Convert any remaining segments when stream ends
+        # Signal end of stream for any remaining segments
         segments_to_remove = []
         for segment_key, segment_data in self.segments.items():
-            session_id = segment_data['session_id']
-            segment_id = segment_data['segment_id']
-            audio_format = segment_data['audio_format']
-            convert_bin_to_wav(session_id, segment_id, audio_format)
+            segment_data['audio_buffer'].put(None)  # Signal end of stream
+            
+            # Wait for transcription to complete
+            if segment_data['transcription_thread']:
+                segment_data['transcription_thread'].join(timeout=5)
+            
             segments_to_remove.append(segment_key)
         
         # Clean up processed segments
@@ -104,6 +131,93 @@ class StreamingService(ringcx_streaming_pb2_grpc.StreamingServicer):
             del self.segments[key]
             
         return Empty()
+    
+    def stream_transcript(self, segment_key):
+        """Stream audio data to Google Speech-to-Text and print transcripts"""
+        if segment_key not in self.segments:
+            logger.error(f"Segment {segment_key} not found for transcription")
+            return
+        
+        segment_data = self.segments[segment_key]
+        audio_format = segment_data['audio_format']
+        audio_buffer = segment_data['audio_buffer']
+        session_id = segment_data['session_id']
+        segment_id = segment_data['segment_id']
+        
+        # Get audio format parameters
+        sample_rate = audio_format.get('sample_rate', 8000)
+        encoding = audio_format.get('encoding', 'PCMU')
+        
+        # Configure speech recognition
+        config = speech.RecognitionConfig(
+            encoding=self._get_google_encoding(encoding),
+            sample_rate_hertz=sample_rate,
+            language_code="en-US",
+            enable_automatic_punctuation=True,
+            model="phone_call"  # Use phone_call model for better handling of telephony audio
+        )
+        
+        streaming_config = speech.StreamingRecognitionConfig(
+            config=config,
+            interim_results=True
+        )
+        
+        # Audio stream generator
+        def audio_stream_generator():
+            while True:
+                chunk = audio_buffer.get()
+                if chunk is None:  # End of stream
+                    break
+                
+                # Convert audio format if needed
+                if encoding == 'PCMA':  # A-law
+                    chunk = audioop.alaw2lin(chunk, 2)
+                elif encoding == 'PCMU':  # μ-law
+                    chunk = audioop.ulaw2lin(chunk, 2)
+                
+                yield speech.StreamingRecognizeRequest(audio_content=chunk)
+        
+        # Start streaming recognition
+        try:
+            streaming_responses = self.speech_client.streaming_recognize(
+                config=streaming_config,
+                requests=audio_stream_generator()
+            )
+            
+            logger.info(f"Started transcription for {segment_key}")
+            
+            # Process streaming responses
+            for response in streaming_responses:
+                if not response.results:
+                    continue
+                
+                for result in response.results:
+                    transcript = result.alternatives[0].transcript if result.alternatives else ""
+                    
+                    if result.is_final:
+                        logger.info(f"Transcript [{segment_key}]: {transcript}")
+                        print(f"FINAL TRANSCRIPT [{segment_key}]: {transcript}")
+                    else:
+                        logger.debug(f"Interim [{segment_key}]: {transcript}")
+                        print(f"INTERIM [{segment_key}]: {transcript}")
+            
+            logger.info(f"Completed transcription for {segment_key}")
+            
+        except Exception as e:
+            logger.error(f"Error in transcription for {segment_key}: {e}")
+    
+    def _get_google_encoding(self, encoding):
+        """Convert internal encoding names to Google Speech-to-Text encoding enum values"""
+        if encoding == 'LINEAR16' or encoding == 'L16':
+            return speech.RecognitionConfig.AudioEncoding.LINEAR16
+        elif encoding == 'PCMA':
+            return speech.RecognitionConfig.AudioEncoding.MULAW  # Google doesn't have A-law, convert to PCM
+        elif encoding == 'PCMU':
+            return speech.RecognitionConfig.AudioEncoding.MULAW
+        else:
+            # Default to LINEAR16
+            logger.warning(f"Unsupported encoding {encoding} for Google STT, using LINEAR16")
+            return speech.RecognitionConfig.AudioEncoding.LINEAR16
 
 
 def serve(server_ip, grpc_port, grpc_secure_port):
@@ -191,8 +305,6 @@ def convert_bin_to_wav(session_id, segment_id, audio_format):
             audio_data = f.read()
         
         # Convert based on codec type
-        import audioop
-        
         if encoding == 'PCMA':  # A-law
             # Convert A-law to PCM (2 bytes per sample)
             audio_data = audioop.alaw2lin(audio_data, 2)
