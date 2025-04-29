@@ -8,7 +8,7 @@ import wave
 from pathlib import Path
 from concurrent import futures
 from google.protobuf.empty_pb2 import Empty
-from flask import Flask, send_file, Response
+from flask import Flask, send_file, Response, render_template_string, jsonify
 import time
 import ringcx_streaming_pb2
 import audioop
@@ -16,9 +16,97 @@ import audioop
 from google.cloud import speech
 import queue
 import io
+import glob
+from datetime import datetime
 
 app = Flask(__name__)
 OUTPUT_FOLDER = 'saved_audio'
+
+# HTML template for the web page
+HTML_TEMPLATE = """
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Audio Recordings</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        h1, h2, h3 {
+            color: #333;
+        }
+        ul {
+            list-style-type: none;
+            padding: 0;
+        }
+        li {
+            border: 1px solid #ddd;
+            margin-bottom: 10px;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        audio {
+            width: 100%;
+        }
+        .timestamp {
+            color: #666;
+            font-size: 0.8em;
+        }
+        .session {
+            margin-bottom: 30px;
+            border: 1px solid #eee;
+            padding: 15px;
+            border-radius: 8px;
+            background-color: #f9f9f9;
+        }
+    </style>
+</head>
+<body>
+    <h1>Recorded Audio Files</h1>
+    
+    {% if sessions %}
+        {% for session_id, files in sessions.items() %}
+            <div class="session">
+                <h2>Session: {{ session_id }}</h2>
+                
+                {% if files.wav_files %}
+                    <h3>WAV Files (Playable)</h3>
+                    <ul>
+                    {% for file_path in files.wav_files %}
+                        {% set file_name = file_path.split('/')[-1] %}
+                        <li>
+                            <div>{{ file_name }}</div>
+                            <audio controls>
+                                <source src="/files/{{ file_path }}" type="audio/wav">
+                                Your browser does not support the audio element.
+                            </audio>
+                        </li>
+                    {% endfor %}
+                    </ul>
+                {% endif %}
+                
+                {% if files.bin_files %}
+                    <h3>Raw Binary Files</h3>
+                    <ul>
+                    {% for file_path in files.bin_files %}
+                        {% set file_name = file_path.split('/')[-1] %}
+                        <li>
+                            <a href="/files/{{ file_path }}">{{ file_name }}</a>
+                        </li>
+                    {% endfor %}
+                    </ul>
+                {% endif %}
+            </div>
+        {% endfor %}
+    {% else %}
+        <p>No audio recordings found.</p>
+    {% endif %}
+</body>
+</html>
+"""
 
 class StreamingService(ringcx_streaming_pb2_grpc.StreamingServicer):
     def __init__(self):
@@ -394,27 +482,15 @@ def list_files():
             elif file_name.endswith('.bin'):
                 sessions[session_id]['bin_files'].append(file_path)
     
-    # Generate HTML output
-    html_output = "<h1>Recorded Audio Files</h1>"
+    # Sort sessions and files
+    sorted_sessions = {}
+    for session_id in sorted(sessions.keys(), reverse=True):
+        sorted_sessions[session_id] = {
+            'wav_files': sorted(sessions[session_id]['wav_files']),
+            'bin_files': sorted(sessions[session_id]['bin_files'])
+        }
     
-    for session_id, files in sorted(sessions.items()):
-        html_output += f"<h2>Session: {session_id}</h2>"
-        
-        if files['wav_files']:
-            html_output += "<h3>WAV Files (Playable)</h3><ul>"
-            for file in sorted(files['wav_files']):
-                file_name = file.split('/')[-1]
-                html_output += f'<li><a href="/files/{file}">{file_name}</a> <audio controls><source src="/files/{file}" type="audio/wav"></audio></li>'
-            html_output += "</ul>"
-            
-        if files['bin_files']:
-            html_output += "<h3>Raw Binary Files</h3><ul>"
-            for file in sorted(files['bin_files']):
-                file_name = file.split('/')[-1]
-                html_output += f'<li><a href="/files/{file}">{file_name}</a></li>'
-            html_output += "</ul>"
-    
-    return html_output
+    return render_template_string(HTML_TEMPLATE, sessions=sorted_sessions)
 
 @app.route('/files/<path:filename>')
 def download_file(filename):
@@ -424,6 +500,18 @@ def download_file(filename):
         return Response(file_content, content_type='text/plain')
     return send_file(filename)
 
+@app.route('/api/files')
+def api_list_files():
+    """API endpoint to list all audio files"""
+    wav_files = []
+    for root, _, files in os.walk(OUTPUT_FOLDER):
+        for file in files:
+            if file.endswith('.wav'):
+                file_path = os.path.join(root, file)
+                relative_path = os.path.relpath(file_path, OUTPUT_FOLDER)
+                wav_files.append(relative_path)
+                
+    return jsonify({"files": wav_files})
 
 def parse_args():
     parser = argparse.ArgumentParser(description="gRPC Streaming Server")
@@ -433,7 +521,7 @@ def parse_args():
     parser.add_argument('--server_ip', type=str, default='0.0.0.0', help="IP address for server")
     parser.add_argument('--grpc_port', type=int, default=10080, help="Port for gRPC server")
     parser.add_argument('--grpc_secure_port', type=int, default=443, help="Port for gRPC server with ssl")
-    parser.add_argument('--http_port', type=int, default=8000, help="Port for http server to download outputs")
+    parser.add_argument('--http_port', type=int, default=8080, help="Port for http server to download outputs")
 
     return parser.parse_args()
 
